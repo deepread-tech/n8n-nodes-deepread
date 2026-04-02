@@ -1,0 +1,57 @@
+{
+	"name": "n8n-nodes-deepread",
+	"version": "0.1.0",
+	"description": "n8n community node for DeepRead — document AI with OCR, structured extraction, form filling, and PII redaction",
+	"license": "MIT",
+	"homepage": "https://www.deepread.tech",
+	"keywords": [
+		"n8n-community-node-package",
+		"n8n",
+		"ocr",
+		"document-processing",
+		"pdf",
+		"pii",
+		"form-fill",
+		"deepread"
+	],
+	"author": {
+		"name": "DeepRead Technologies",
+		"email": "hello@deepread.tech"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/deepread-tech/n8n-nodes-deepread.git"
+	},
+	"scripts": {
+		"build": "n8n-node build",
+		"build:watch": "tsc --watch",
+		"dev": "n8n-node dev",
+		"lint": "n8n-node lint",
+		"lint:fix": "n8n-node lint --fix",
+		"release": "n8n-node release",
+		"prepublishOnly": "n8n-node prerelease"
+	},
+	"files": [
+		"dist"
+	],
+	"n8n": {
+		"n8nNodesApiVersion": 1,
+		"strict": true,
+		"credentials": [
+			"dist/credentials/DeepReadApi.credentials.js"
+		],
+		"nodes": [
+			"dist/nodes/DeepRead/DeepRead.node.js"
+		]
+	},
+	"devDependencies": {
+		"@n8n/node-cli": "*",
+		"eslint": "9.39.4",
+		"prettier": "3.8.1",
+		"release-it": "19.2.4",
+		"typescript": "5.9.3"
+	},
+	"peerDependencies": {
+		"n8n-workflow": "*"
+	}
+}
