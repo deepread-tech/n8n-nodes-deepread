@@ -4,7 +4,7 @@ import type {
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
-import { NodeConnectionTypes, NodeOperationError } from 'n8n-workflow';
+import { NodeConnectionTypes, NodeOperationError, sleep } from 'n8n-workflow';
 
 export class DeepRead implements INodeType {
 	description: INodeTypeDescription = {
@@ -97,11 +97,11 @@ export class DeepRead implements INodeType {
 				name: 'language',
 				type: 'options',
 				options: [
-					{ name: 'English', value: 'en' },
-					{ name: 'Chinese', value: 'zh' },
-					{ name: 'Spanish', value: 'es' },
-					{ name: 'Hindi', value: 'hi' },
 					{ name: 'Arabic', value: 'ar' },
+					{ name: 'Chinese', value: 'zh' },
+					{ name: 'English', value: 'en' },
+					{ name: 'Hindi', value: 'hi' },
+					{ name: 'Spanish', value: 'es' },
 				],
 				default: 'en',
 				description: 'Document language for PII detection',
@@ -195,7 +195,7 @@ export class DeepRead implements INodeType {
 				let delay = 5000;
 
 				while (Date.now() - startTime < timeout * 1000) {
-					await new Promise((resolve) => setTimeout(resolve, delay));
+					await sleep(delay);
 
 					const pollResponse = await this.helpers.httpRequestWithAuthentication.call(
 						this,

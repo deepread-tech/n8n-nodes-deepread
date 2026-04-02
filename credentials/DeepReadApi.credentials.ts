@@ -3,12 +3,15 @@ import type {
 	ICredentialTestRequest,
 	ICredentialType,
 	INodeProperties,
+	Icon,
 } from 'n8n-workflow';
 
 export class DeepReadApi implements ICredentialType {
 	name = 'deepReadApi';
 
 	displayName = 'DeepRead API';
+
+	icon: Icon = 'file:../nodes/DeepRead/deepread.svg';
 
 	documentationUrl = 'https://www.deepread.tech/docs';
 
