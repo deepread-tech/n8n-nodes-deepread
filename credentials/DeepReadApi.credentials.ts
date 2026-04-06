@@ -39,7 +39,7 @@ export class DeepReadApi implements ICredentialType {
 	test: ICredentialTestRequest = {
 		request: {
 			baseURL: 'https://api.deepread.tech',
-			url: '/v1/pipelines',
+			url: '/v1/blueprints/',
 			method: 'GET',
 		},
 	};

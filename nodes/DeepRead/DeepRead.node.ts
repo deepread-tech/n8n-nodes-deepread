@@ -243,9 +243,17 @@ export class DeepRead implements INodeType {
 						returnData.push(outputItem);
 						break;
 					} else if (pollResponse.status === 'failed') {
+						let errorMsg = 'Unknown error';
+						if (pollResponse.error) {
+							errorMsg = typeof pollResponse.error === 'object'
+								? (pollResponse.error as { message?: string }).message || JSON.stringify(pollResponse.error)
+								: String(pollResponse.error);
+						} else if (pollResponse.error_message) {
+							errorMsg = String(pollResponse.error_message);
+						}
 						throw new NodeOperationError(
 							this.getNode(),
-							`DeepRead processing failed: ${pollResponse.error || pollResponse.error_message || 'Unknown error'}`,
+							`DeepRead processing failed: ${errorMsg}`,
 							{ itemIndex: i },
 						);
 					}
