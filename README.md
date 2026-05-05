@@ -1,262 +1,129 @@
-![Banner image](https://user-images.githubusercontent.com/10284570/173569848-c624317f-42b1-45a6-ab09-f0ea3c247648.png)
+# n8n-nodes-deepread
 
-# n8n-nodes-starter
+This is an [n8n](https://n8n.io) community node for [DeepRead](https://www.deepread.tech) — AI-native document processing with 97%+ accuracy using multi-model consensus (GPT + Gemini + dual OCR).
 
-This starter repository helps you build custom integrations for [n8n](https://n8n.io). It includes example nodes, credentials, the node linter, and all the tooling you need to get started.
+[n8n](https://n8n.io) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-## Quick Start
+[Installation](#installation)
+[Operations](#operations)
+[Credentials](#credentials)
+[Compatibility](#compatibility)
+[Usage](#usage)
+[Resources](#resources)
 
-> [!TIP]
-> **New to building n8n nodes?** The fastest way to get started is with `npm create @n8n/node`. This command scaffolds a complete node package for you using the [@n8n/node-cli](https://www.npmjs.com/package/@n8n/node-cli).
+## Installation
 
-**To create a new node package from scratch:**
+Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation.
 
-```bash
-npm create @n8n/node
+**Quick install** in n8n:
+1. Go to **Settings** → **Community Nodes**
+2. Click **Install**
+3. Enter `n8n-nodes-deepread`
+4. Click **Install**
+
+## Operations
+
+The DeepRead node supports four operations, all powered by the same DeepRead API:
+
+### OCR Extract
+Extract text from any PDF or image. Returns the raw extracted text plus a preview URL for the document.
+
+### Structured Extraction
+Extract typed JSON fields from documents using a custom JSON Schema. Each field returns:
+- `value` — the extracted value
+- `hil_flag` — `true` if the field needs human review
+- `reason` — explanation when flagged
+- `found_on_page` — page number
+
+Use this for invoices, receipts, contracts, medical records, insurance claims — any document where you need specific fields.
+
+### Form Fill
+Fill any PDF form (including scanned, non-editable forms) with your data. AI visually detects fields, semantically maps your JSON data, fills the form, and quality-checks the result. Returns the filled PDF as a binary attachment.
+
+Returns:
+- `filled_form_url` — URL to the filled PDF
+- `fields_detected` — total fields found
+- `fields_filled` — fields successfully filled
+- `fields_hil_flagged` — fields needing review
+
+### PII Redact
+Detect and redact 14 types of PII with irreversible black bars (HIPAA/GDPR ready):
+- Names, SSNs, credit cards, emails, phones, addresses
+- IPs, DOB, passport numbers, driver's licenses
+- Bank accounts, IBANs, URLs, medical record numbers
+
+Returns the redacted PDF as a binary attachment plus a detection report by PII type.
+
+Supports 5 languages: English, Chinese, Spanish, Hindi, Arabic.
+
+## Credentials
+
+You need a DeepRead API key:
+
+1. Sign up at [deepread.tech/dashboard](https://www.deepread.tech/dashboard) (free, no credit card)
+2. Get your API key
+3. In n8n, create a new **DeepRead API** credential
+4. Paste your API key (starts with `sk_live_...`)
+5. Click **Test** to verify
+
+**Free tier:** 2,000 pages/month
+**Pro:** $99/mo for 50,000 pages
+**BYOK:** Connect your own OpenAI/Google/OpenRouter key at [deepread.tech/dashboard/byok](https://www.deepread.tech/dashboard/byok) for zero DeepRead LLM costs and unlimited pages
+
+## Compatibility
+
+- Tested with n8n 1.0+
+- Works in self-hosted and cloud n8n
+- Compatible with all standard n8n agent integrations (use as a tool in AI Agent nodes)
+
+## Usage
+
+### Example: Auto-process invoices from email
+
+```
+[Gmail Trigger] → [DeepRead: Structured Extraction] → [Google Sheets]
+                  Schema: vendor, total, due_date
 ```
 
-**Already using this starter? Start developing with:**
+### Example: Redact PII before LLM processing
 
-```bash
-npm run dev
+```
+[File Upload] → [DeepRead: PII Redact] → [OpenAI: Analyze]
 ```
 
-This starts n8n with your nodes loaded and hot reload enabled.
+### Example: Auto-fill onboarding forms
 
-## What's Included
-
-This starter repository includes two example nodes to learn from:
-
-- **[Example Node](nodes/Example/)** - A simple starter node that shows the basic structure with a custom `execute` method
-- **[GitHub Issues Node](nodes/GithubIssues/)** - A complete, production-ready example built using the **declarative style**:
-  - **Low-code approach** - Define operations declaratively without writing request logic
-  - Multiple resources (Issues, Comments)
-  - Multiple operations (Get, Get All, Create)
-  - Two authentication methods (OAuth2 and Personal Access Token)
-  - List search functionality for dynamic dropdowns
-  - Proper error handling and typing
-  - Ideal for HTTP API-based integrations
-
-> [!TIP]
-> The declarative/low-code style (used in GitHub Issues) is the recommended approach for building nodes that interact with HTTP APIs. It significantly reduces boilerplate code and handles requests automatically.
-
-Browse these examples to understand both approaches, then modify them or create your own.
-
-## Finding Inspiration
-
-Looking for more examples? Check out these resources:
-
-- **[npm Community Nodes](https://www.npmjs.com/search?q=keywords:n8n-community-node-package)** - Browse thousands of community-built nodes on npm using the `n8n-community-node-package` tag
-- **[n8n Built-in Nodes](https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/nodes)** - Study the source code of n8n's official nodes for production-ready patterns and best practices
-- **[n8n Credentials](https://github.com/n8n-io/n8n/tree/master/packages/nodes-base/credentials)** - See how authentication is implemented for various services
-
-These are excellent resources to understand how to structure your nodes, handle different API patterns, and implement advanced features.
-
-## Prerequisites
-
-Before you begin, install the following on your development machine:
-
-### Required
-
-- **[Node.js](https://nodejs.org/)** (v22 or higher) and npm
-  - Linux/Mac/WSL: Install via [nvm](https://github.com/nvm-sh/nvm)
-  - Windows: Follow [Microsoft's NodeJS guide](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-windows)
-- **[git](https://git-scm.com/downloads)**
-
-### Recommended
-
-- Follow n8n's [development environment setup guide](https://docs.n8n.io/integrations/creating-nodes/build/node-development-environment/)
-
-> [!NOTE]
-> The `@n8n/node-cli` is included as a dev dependency and will be installed automatically when you run `npm install`. The CLI includes n8n for local development, so you don't need to install n8n globally.
-
-## Getting Started with this Starter
-
-Follow these steps to create your own n8n community node package:
-
-### 1. Create Your Repository
-
-[Generate a new repository](https://github.com/n8n-io/n8n-nodes-starter/generate) from this template, then clone it:
-
-```bash
-git clone https://github.com/<your-organization>/<your-repo-name>.git
-cd <your-repo-name>
+```
+[Webhook] → [DeepRead: Form Fill] → [Email: Send filled PDF]
+            Form fields: full_name, dob, ssn, address
 ```
 
-### 2. Install Dependencies
-
-```bash
-npm install
-```
-
-This installs all required dependencies including the `@n8n/node-cli`.
-
-### 3. Explore the Examples
-
-Browse the example nodes in [nodes/](nodes/) and [credentials/](credentials/) to understand the structure:
-
-- Start with [nodes/Example/](nodes/Example/) for a basic node
-- Study [nodes/GithubIssues/](nodes/GithubIssues/) for a real-world implementation
-
-### 4. Build Your Node
-
-Edit the example nodes to fit your use case, or create new node files by copying the structure from [nodes/Example/](nodes/Example/).
-
-> [!TIP]
-> If you want to scaffold a completely new node package, use `npm create @n8n/node` to start fresh with the CLI's interactive generator.
-
-### 5. Configure Your Package
-
-Update `package.json` with your details:
-
-- `name` - Your package name (must start with `n8n-nodes-`)
-- `author` - Your name and email
-- `repository` - Your repository URL
-- `description` - What your node does
-
-Make sure your node is registered in the `n8n.nodes` array.
-
-### 6. Develop and Test Locally
-
-Start n8n with your node loaded:
-
-```bash
-npm run dev
-```
-
-This command runs `n8n-node dev` which:
-
-- Builds your node with watch mode
-- Starts n8n with your node available
-- Automatically rebuilds when you make changes
-- Opens n8n in your browser (usually http://localhost:5678)
-
-You can now test your node in n8n workflows!
-
-> [!NOTE]
-> Learn more about CLI commands in the [@n8n/node-cli documentation](https://www.npmjs.com/package/@n8n/node-cli).
-
-### 7. Lint Your Code
-
-Check for errors:
-
-```bash
-npm run lint
-```
-
-Auto-fix issues when possible:
-
-```bash
-npm run lint:fix
-```
-
-### 8. Build for Production
-
-When ready to publish:
-
-```bash
-npm run build
-```
-
-This compiles your TypeScript code to the `dist/` folder.
-
-### 9. Prepare for Publishing
-
-Before publishing:
-
-1. **Update documentation**: Replace this README with your node's documentation. Use [README_TEMPLATE.md](README_TEMPLATE.md) as a starting point.
-2. **Update the LICENSE**: Add your details to the [LICENSE](LICENSE.md) file.
-3. **Test thoroughly**: Ensure your node works in different scenarios.
-
-### 10. Publish to npm
-
-Publishing is handled automatically by the included GitHub Actions workflow ([.github/workflows/publish.yml](.github/workflows/publish.yml)). It runs on every version tag push and publishes to npm with a provenance attestation — a requirement for n8n community nodes starting May 1, 2026.
-
-#### One-time setup
-
-Configure npm to trust this repository's GitHub Actions workflow so it can publish on your behalf. Log in to [npmjs.com](https://npmjs.com), open your package settings, and under **Publish access → Trusted Publishers** add a publisher with:
-
-- **Repository owner**: your GitHub username or org
-- **Repository name**: your repo name
-- **Workflow name**: `publish.yml`
-
-No token or secret needs to be stored in GitHub — the workflow uses GitHub's OIDC token instead.
-
-> [!NOTE]
-> If you prefer a traditional npm token, create a Granular Access Token on npmjs.com and store it as `NPM_TOKEN` in your repository's Actions secrets. See the comments at the top of `.github/workflows/publish.yml` for details.
-
-#### Releasing a new version
-
-```bash
-npm run release
-```
-
-This lints, builds, prompts for a version bump, updates the changelog, commits, tags, and pushes — which triggers the workflow to publish to npm.
-
-### 11. Submit for Verification (Optional)
-
-Get your node verified for n8n Cloud:
-
-1. Ensure your node meets the [requirements](https://docs.n8n.io/integrations/creating-nodes/deploy/submit-community-nodes/):
-   - Uses MIT license ✅ (included in this starter)
-   - No external package dependencies
-   - Follows n8n's design guidelines
-   - Passes quality and security review
-
-2. Submit through the [n8n Creator Portal](https://creators.n8n.io/nodes)
-
-**Benefits of verification:**
-
-- Available directly in n8n Cloud
-- Discoverable in the n8n nodes panel
-- Verified badge for quality assurance
-- Increased visibility in the n8n community
-
-## Available Scripts
-
-This starter includes several npm scripts to streamline development:
-
-| Script                | Description                                                                 |
-| --------------------- | --------------------------------------------------------------------------- |
-| `npm run dev`         | Start n8n with your node and watch for changes (runs `n8n-node dev`)        |
-| `npm run build`       | Compile TypeScript to JavaScript for production (runs `n8n-node build`)     |
-| `npm run build:watch` | Build in watch mode (auto-rebuild on changes)                               |
-| `npm run lint`        | Check your code for errors and style issues (runs `n8n-node lint`)          |
-| `npm run lint:fix`    | Automatically fix linting issues when possible (runs `n8n-node lint --fix`) |
-| `npm run release`     | Create a new release (runs `n8n-node release`)                              |
-
-> [!TIP]
-> These scripts use the [@n8n/node-cli](https://www.npmjs.com/package/@n8n/node-cli) under the hood. You can also run CLI commands directly, e.g., `npx n8n-node dev`.
-
-## Troubleshooting
-
-### My node doesn't appear in n8n
-
-1. Make sure you ran `npm install` to install dependencies
-2. Check that your node is listed in `package.json` under `n8n.nodes`
-3. Restart the dev server with `npm run dev`
-4. Check the console for any error messages
-
-### Linting errors
-
-Run `npm run lint:fix` to automatically fix most common issues. For remaining errors, check the [n8n node development guidelines](https://docs.n8n.io/integrations/creating-nodes/).
-
-### TypeScript errors
-
-Make sure you're using Node.js v22 or higher and have run `npm install` to get all type definitions.
+The node handles all async polling automatically — submit a document, get the result back. No need to manage job IDs or polling logic.
 
 ## Resources
 
-- **[n8n Node Documentation](https://docs.n8n.io/integrations/creating-nodes/)** - Complete guide to building nodes
-- **[n8n Community Forum](https://community.n8n.io/)** - Get help and share your nodes
-- **[@n8n/node-cli Documentation](https://www.npmjs.com/package/@n8n/node-cli)** - CLI tool reference
-- **[n8n Creator Portal](https://creators.n8n.io/nodes)** - Submit your node for verification
-- **[Submit Community Nodes Guide](https://docs.n8n.io/integrations/creating-nodes/deploy/submit-community-nodes/)** - Verification requirements and process
+- **DeepRead website**: https://www.deepread.tech
+- **Dashboard**: https://www.deepread.tech/dashboard
+- **API documentation**: https://www.deepread.tech/docs
+- **Demo repo (Python/Node/cURL examples)**: https://github.com/deepread-tech/deepread-demo
+- **n8n community nodes documentation**: https://docs.n8n.io/integrations/#community-nodes
+- **Report issues**: https://github.com/deepread-tech/n8n-nodes-deepread/issues
+- **Email support**: hello@deepread.tech
 
-## Contributing
+## Version history
 
-Have suggestions for improving this starter? [Open an issue](https://github.com/n8n-io/n8n-nodes-starter/issues) or submit a pull request!
+### 0.1.2
+- Fix: PII errors now properly extracted from `{code, message}` objects
+- Fix: Credential test now uses authenticated endpoint to validate API keys
+
+### 0.1.1
+- Fix: Lint errors (icon, alphabetical order, sleep import)
+
+### 0.1.0
+- Initial release with 4 operations: OCR Extract, Structured Extraction, Form Fill, PII Redact
+- Async polling with exponential backoff
+- Binary output for redacted/filled PDFs
 
 ## License
 
-[MIT](https://github.com/n8n-io/n8n-nodes-starter/blob/master/LICENSE.md)
+[MIT](LICENSE.md)
