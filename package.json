@@ -1,6 +1,6 @@
 {
 	"name": "n8n-nodes-deepread",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "n8n community node for DeepRead — document AI with OCR, structured extraction, form filling, and PII redaction",
 	"license": "MIT",
 	"homepage": "https://www.deepread.tech",
