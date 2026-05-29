@@ -29,11 +29,12 @@ The DeepRead node supports four operations, all powered by the same DeepRead API
 Extract text from any PDF or image. Returns the raw extracted text plus a preview URL for the document.
 
 ### Structured Extraction
-Extract typed JSON fields from documents using a custom JSON Schema. Each field returns:
-- `value` — the extracted value
-- `hil_flag` — `true` if the field needs human review
-- `reason` — explanation when flagged
-- `found_on_page` — page number
+Extract typed JSON fields from documents using a custom JSON Schema. The node outputs the full job response. Extracted fields live in the `extraction.fields` array (`$json.extraction.fields`), where each field is an object:
+- `key` — the field name from your schema (e.g. `invoice_number`)
+- `value` — the extracted value (scalar, object, or array)
+- `needs_review` — `true` if the field needs human review
+- `review_reason` — explanation when flagged (present only when `needs_review` is `true`)
+- `location.page` — page number the value was found on
 
 Use this for invoices, receipts, contracts, medical records, insurance claims — any document where you need specific fields.
 
