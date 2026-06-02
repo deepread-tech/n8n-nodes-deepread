@@ -109,7 +109,7 @@ The node handles all async polling automatically — submit a document, get the 
 - **Demo repo (Python/Node/cURL examples)**: https://github.com/deepread-tech/deepread-demo
 - **n8n community nodes documentation**: https://docs.n8n.io/integrations/#community-nodes
 - **Report issues**: https://github.com/deepread-tech/n8n-nodes-deepread/issues
-- **Email support**: hello@deepread.tech
+- **Email support**: support@deepread.tech
 
 ## Version history
 
