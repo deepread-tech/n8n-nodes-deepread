@@ -112,6 +112,19 @@ export class DeepRead implements INodeType {
 				},
 			},
 			{
+				displayName: 'Searchable PDF',
+				name: 'searchablePdf',
+				type: 'boolean',
+				default: false,
+				description:
+					'Whether to also produce a searchable PDF (embedded OCR text layer), returned as a binary output. Standard accuracy tier only.',
+				displayOptions: {
+					show: {
+						operation: ['ocrExtract', 'structuredExtract'],
+					},
+				},
+			},
+			{
 				displayName: 'Timeout (Seconds)',
 				name: 'timeout',
 				type: 'number',
@@ -157,6 +170,11 @@ export class DeepRead implements INodeType {
 					if (operation === 'structuredExtract') {
 						const schema = this.getNodeParameter('schema', i) as string;
 						formData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema);
+					}
+					const searchablePdf = this.getNodeParameter('searchablePdf', i, false) as boolean;
+					if (searchablePdf) {
+						// Add-on on the standard tier (the default pipeline).
+						formData.searchable_pdf = 'true';
 					}
 				}
 
@@ -238,6 +256,27 @@ export class DeepRead implements INodeType {
 								binaryData.mimeType,
 							);
 							outputItem.binary = { data: binaryOutput };
+						}
+
+						// If a searchable PDF was produced (OCR/structured + searchable_pdf), download it
+						const artifacts = pollResponse.artifacts as { searchable_pdf_url?: string } | undefined;
+						if (
+							(operation === 'ocrExtract' || operation === 'structuredExtract') &&
+							artifacts?.searchable_pdf_url
+						) {
+							const searchableFile = await this.helpers.httpRequest({
+								method: 'GET',
+								url: artifacts.searchable_pdf_url,
+								encoding: 'arraybuffer',
+							});
+							const searchableBinary = await this.helpers.prepareBinaryData(
+								Buffer.from(searchableFile as ArrayBuffer),
+								binaryData.fileName
+									? `searchable_${binaryData.fileName}`
+									: 'searchable_document.pdf',
+								'application/pdf',
+							);
+							outputItem.binary = { ...(outputItem.binary ?? {}), searchablePdf: searchableBinary };
 						}
 
 						returnData.push(outputItem);
