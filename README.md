@@ -48,7 +48,7 @@ Returns:
 - `fields_hil_flagged` — fields needing review
 
 ### PII Redact
-Detect and redact 14 types of PII with irreversible black bars (HIPAA/GDPR ready):
+Detect and redact 14 types of PII with irreversible black bars, built for HIPAA/GDPR redaction workflows:
 - Names, SSNs, credit cards, emails, phones, addresses
 - IPs, DOB, passport numbers, driver's licenses
 - Bank accounts, IBANs, URLs, medical record numbers
