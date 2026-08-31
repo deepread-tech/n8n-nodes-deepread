@@ -1,6 +1,6 @@
 # n8n-nodes-deepread
 
-This is an [n8n](https://n8n.io) community node for [DeepRead](https://www.deepread.tech) — AI-native document processing with 97%+ accuracy using multi-model consensus (GPT + Gemini + dual OCR).
+This is an [n8n](https://n8n.io) community node for [DeepRead](https://www.deepread.tech) — AI-native document processing with 97%+ accuracy using multi-model consensus (dual Gemini OCR with cross-validation; Mistral OCR on the fast tier).
 
 [n8n](https://n8n.io) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
