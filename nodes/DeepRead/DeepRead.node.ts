@@ -112,12 +112,43 @@ export class DeepRead implements INodeType {
 				},
 			},
 			{
+				displayName: 'Engine',
+				name: 'engine',
+				type: 'options',
+				options: [
+					{
+						name: 'Plan Default',
+						value: '',
+						description: 'Extract on Free and Standard plans, Deep Extract on Enterprise plans',
+					},
+					{
+						name: 'Extract',
+						value: 'extract',
+						description: 'One OCR pass. Parse without a schema, Extract with one.',
+					},
+					{
+						name: 'Deep Extract',
+						value: 'deep-extract',
+						description:
+							'Two OCR passes, an LLM judge and a second read that checks each extracted field value',
+					},
+				],
+				default: '',
+				description:
+					'Which engine processes the document (sent as the pipeline field). Every job reports its product: parse, extract or deep-extract. The older names fast and standard still work as aliases.',
+				displayOptions: {
+					show: {
+						operation: ['ocrExtract', 'structuredExtract'],
+					},
+				},
+			},
+			{
 				displayName: 'Searchable PDF',
 				name: 'searchablePdf',
 				type: 'boolean',
 				default: false,
 				description:
-					'Whether to also produce a searchable PDF (embedded OCR text layer), returned as a binary output. Standard accuracy tier only.',
+					'Whether to also produce a searchable PDF (embedded OCR text layer), returned as a binary output. A Deep Extract add-on on Enterprise plans; the Extract engine does not support it.',
 				displayOptions: {
 					show: {
 						operation: ['ocrExtract', 'structuredExtract'],
@@ -130,6 +161,56 @@ export class DeepRead implements INodeType {
 				type: 'number',
 				default: 300,
 				description: 'Maximum time to wait for processing to complete',
+			},
+			{
+				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				placeholder: 'Add Option',
+				default: {},
+				displayOptions: {
+					show: {
+						operation: ['ocrExtract', 'structuredExtract'],
+					},
+				},
+				options: [
+					{
+						displayName: 'Idempotency Key',
+						name: 'idempotencyKey',
+						type: 'string',
+						default: '',
+						description:
+							'A key unique to this request (up to 255 characters). A retry with the same key returns the job the first request created instead of a second one; a different request with the same key is refused with 409.',
+					},
+					{
+						displayName: 'Incognito',
+						name: 'incognito',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether to encrypt the document with a single-use key and crypto-shred it the moment the job finishes. No preview link and no field locations; cannot be combined with Searchable PDF. Enterprise plans.',
+					},
+					{
+						displayName: 'Preview',
+						name: 'preview',
+						type: 'boolean',
+						default: true,
+						description:
+							'Whether to store page images, return a public preview link and locate each extracted value on the document. When off there are no page images, no preview link and no field locations. Always off for incognito jobs.',
+					},
+					{
+						displayName: 'Retention (Days)',
+						name: 'retentionDays',
+						type: 'number',
+						typeOptions: {
+							minValue: 1,
+							maxValue: 365,
+						},
+						default: 30,
+						description:
+							'Delete the document, preview artifacts and extracted results this many days after submission (1 to 365). Enterprise plans.',
+					},
+				],
 			},
 		],
 	};
@@ -150,7 +231,7 @@ export class DeepRead implements INodeType {
 				// Determine endpoint and build form data
 				let submitUrl: string;
 				let pollUrlPrefix: string;
-				const formData: Record<string, unknown> = {};
+				const formData: Record<string, string> = {};
 
 				if (operation === 'formFill') {
 					submitUrl = 'https://api.deepread.tech/v1/form-fill';
@@ -171,10 +252,33 @@ export class DeepRead implements INodeType {
 						const schema = this.getNodeParameter('schema', i) as string;
 						formData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema);
 					}
+					const engine = this.getNodeParameter('engine', i, '') as string;
+					if (engine) {
+						formData.pipeline = engine;
+					}
 					const searchablePdf = this.getNodeParameter('searchablePdf', i, false) as boolean;
 					if (searchablePdf) {
-						// Add-on on the standard tier (the default pipeline).
+						// Deep Extract add-on, Enterprise plans.
 						formData.searchable_pdf = 'true';
+					}
+					const options = this.getNodeParameter('options', i, {}) as {
+						idempotencyKey?: string;
+						incognito?: boolean;
+						preview?: boolean;
+						retentionDays?: number;
+					};
+					if (options.idempotencyKey) {
+						formData.idempotency_key = options.idempotencyKey;
+					}
+					// The API reads form fields, so booleans travel as "true"/"false".
+					if (options.incognito !== undefined) {
+						formData.incognito = String(options.incognito);
+					}
+					if (options.preview !== undefined) {
+						formData.preview = String(options.preview);
+					}
+					if (options.retentionDays !== undefined) {
+						formData.retention_days = String(options.retentionDays);
 					}
 				}
 
@@ -191,7 +295,7 @@ export class DeepRead implements INodeType {
 				});
 
 				for (const [key, value] of Object.entries(formData)) {
-					multipartData.push({ name: key, value: value as string });
+					multipartData.push({ name: key, value });
 				}
 
 				const submitResponse = await this.helpers.httpRequestWithAuthentication.call(
