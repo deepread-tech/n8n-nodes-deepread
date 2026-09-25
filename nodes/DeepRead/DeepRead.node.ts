@@ -194,9 +194,9 @@ export class DeepRead implements INodeType {
 						displayName: 'Preview',
 						name: 'preview',
 						type: 'boolean',
-						default: true,
+						default: false,
 						description:
-							'Whether to store page images, return a public preview link and locate each extracted value on the document. When off there are no page images, no preview link and no field locations. Always off for incognito jobs.',
+							'Whether to store page images, return a public preview link and locate each extracted value on the document. Off unless you turn it on: anyone with the link can open the document. When off there are no page images, no preview link and no field locations. Always off for incognito jobs.',
 					},
 					{
 						displayName: 'Retention (Days)',

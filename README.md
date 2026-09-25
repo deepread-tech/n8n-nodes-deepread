@@ -26,7 +26,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 The DeepRead node supports four operations, all powered by the same DeepRead API:
 
 ### OCR Extract
-Extract text from any PDF or image. Returns the raw extracted text plus a preview URL for the document.
+Extract text from any PDF or image. Returns the raw extracted text, plus a preview URL for the document when the Preview option is on.
 
 Accepted uploads depend on the plan: PDF, PNG and JPEG on Free; TIFF, WebP, BMP, GIF, DOCX and TXT from Standard; office, spreadsheet and HTML formats on Enterprise. Anything that is not a PDF, PNG or JPEG is converted to PDF before the page count, and the page count is what is charged.
 
@@ -54,7 +54,7 @@ Every job reports its `product` (`parse`, `extract` or `deep-extract`) and the `
 **Options** (add the ones you need):
 - **Idempotency Key** — a retry with the same key returns the job the first request created instead of a second one; a different request with the same key is refused with `409`
 - **Incognito** (Enterprise) — the document is encrypted with a single-use key and crypto-shredded the moment the job finishes. No preview link, no field locations; cannot be combined with Searchable PDF
-- **Preview** (default on) — page images, a public preview link and the location of each extracted value on the document. Off means none of those
+- **Preview** (default off) — page images, a public preview link and the location of each extracted value on the document. Anyone with the link can open the document, so it exists only when you turn this on
 - **Retention (Days)** (Enterprise, 1–365) — the document, preview artifacts and extracted results are deleted that many days after submission
 
 A feature the plan does not include is refused with `402` and a body naming the plan that has it.
