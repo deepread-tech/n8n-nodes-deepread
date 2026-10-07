@@ -124,7 +124,7 @@ export class DeepRead implements INodeType {
 					{
 						name: 'Extract',
 						value: 'extract',
-						description: 'One OCR pass. Parse without a schema, Extract with one.',
+						description: 'One OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema.',
 					},
 					{
 						name: 'Deep Extract',
@@ -135,7 +135,7 @@ export class DeepRead implements INodeType {
 				],
 				default: '',
 				description:
-					'Which engine processes the document (sent as the pipeline field). Every job reports its product: parse, extract or deep-extract. The older names fast and standard still work as aliases.',
+					'Which engine processes the document (sent as the pipeline field). Every job reports its product: extract or deep-extract. The older names fast and standard still work as aliases.',
 				displayOptions: {
 					show: {
 						operation: ['ocrExtract', 'structuredExtract'],

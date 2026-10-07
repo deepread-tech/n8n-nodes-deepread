@@ -44,10 +44,10 @@ Use this for invoices, receipts, contracts, medical records, insurance claims �
 
 **Engine** picks how the document is processed and is sent as the API's `pipeline` field:
 - **Plan Default** — omits the field: Free and Standard plans run Extract, Enterprise plans run Deep Extract
-- **Extract** — one OCR pass. Without a schema this is the Parse product; with one it is Extract
+- **Extract** — one OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema
 - **Deep Extract** — two OCR passes, an LLM judge and a second read that checks each extracted field value
 
-Every job reports its `product` (`parse`, `extract` or `deep-extract`) and the `pipeline` you asked for. The older names `fast` and `standard` still work as aliases for `extract` and `deep-extract`.
+Every job reports its `product` (`extract` or `deep-extract`) and the `pipeline` you asked for. The older names `fast` and `standard` still work as aliases for `extract` and `deep-extract`.
 
 **Searchable PDF** also returns a searchable/selectable PDF as a binary output (`searchablePdf`). It is a Deep Extract add-on on Enterprise plans; the Extract engine does not support it.
 
@@ -89,7 +89,7 @@ You need a DeepRead API key:
 5. Click **Test** to verify
 
 **Free:** 2,000 pages a month, resetting on the day you signed up
-**Standard:** prepaid credits from $10 per 1,000 pages — Parse $10, Extract $20, Deep Extract $40
+**Standard:** prepaid credits from $15 per 1,000 pages — Extract $15, Deep Extract $35
 **Enterprise:** custom
 **BYOK:** Connect your own OpenAI/Google/OpenRouter key at [deepread.tech/dashboard/byok](https://www.deepread.tech/dashboard/byok) for zero DeepRead LLM costs and unlimited pages
 
