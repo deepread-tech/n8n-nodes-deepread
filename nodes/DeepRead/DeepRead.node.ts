@@ -124,7 +124,7 @@ export class DeepRead implements INodeType {
 					{
 						name: 'Extract',
 						value: 'extract',
-						description: 'One OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema.',
+						description: 'One OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema',
 					},
 					{
 						name: 'Deep Extract',
