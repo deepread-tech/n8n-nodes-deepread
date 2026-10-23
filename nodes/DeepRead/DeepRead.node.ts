@@ -1,10 +1,32 @@
 import type {
+	IDataObject,
 	IExecuteFunctions,
 	INodeExecutionData,
 	INodeType,
 	INodeTypeDescription,
 } from 'n8n-workflow';
 import { NodeConnectionTypes, NodeOperationError, sleep } from 'n8n-workflow';
+
+const TRANSIENT_HTTP_CODES = new Set([429, 502, 503, 504]);
+
+/**
+ * Seconds to wait before polling again when the error is transient
+ * (a poll rate limit or a 5xx such as the API's 503 with Retry-After),
+ * or null when the error is final and should be raised.
+ */
+function transientRetryAfterSeconds(error: unknown): number | null {
+	const err = error as {
+		httpCode?: string | number;
+		cause?: { response?: { headers?: Record<string, string | string[] | undefined> } };
+	};
+	const code = Number(err.httpCode);
+	if (!TRANSIENT_HTTP_CODES.has(code)) {
+		return null;
+	}
+	const header = err.cause?.response?.headers?.['retry-after'];
+	const seconds = Number(Array.isArray(header) ? header[0] : header);
+	return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 60) : 0;
+}
 
 export class DeepRead implements INodeType {
 	description: INodeTypeDescription = {
@@ -175,6 +197,14 @@ export class DeepRead implements INodeType {
 				},
 				options: [
 					{
+						displayName: 'Bounding Boxes',
+						name: 'includeMarkers',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether to locate layout blocks and extracted values on the page (sent as include_markers). Adds a grounding array and a location on each field. Works on both engines and every plan. With Preview on, values can be clicked to highlight their source.',
+					},
+					{
 						displayName: 'Idempotency Key',
 						name: 'idempotencyKey',
 						type: 'string',
@@ -188,7 +218,15 @@ export class DeepRead implements INodeType {
 						type: 'boolean',
 						default: false,
 						description:
-							'Whether to encrypt the document with a single-use key and crypto-shred it the moment the job finishes. No preview link and no field locations; cannot be combined with Searchable PDF. Enterprise plans.',
+							'Whether to encrypt the document with a single-use key and crypto-shred it the moment the job finishes. No preview link; cannot be combined with Searchable PDF or Reviewer Email. Enterprise plans.',
+					},
+					{
+						displayName: 'Per Page',
+						name: 'perPage',
+						type: 'boolean',
+						default: false,
+						description:
+							'Whether to add a per-page breakdown (pages array): the Markdown, layout and fields of each page',
 					},
 					{
 						displayName: 'Preview',
@@ -196,7 +234,7 @@ export class DeepRead implements INodeType {
 						type: 'boolean',
 						default: false,
 						description:
-							'Whether to store page images, return a public preview link and locate each extracted value on the document. Off unless you turn it on: anyone with the link can open the document. When off there are no page images, no preview link and no field locations. Always off for incognito jobs.',
+							'Whether to store page images and return a public preview link. Off unless you turn it on: anyone with the link can open the document. Add Bounding Boxes to locate each value on the page. Always on for Reviewer Email jobs, always off for incognito jobs.',
 					},
 					{
 						displayName: 'Retention (Days)',
@@ -209,6 +247,48 @@ export class DeepRead implements INodeType {
 						default: 30,
 						description:
 							'Delete the document, preview artifacts and extracted results this many days after submission (1 to 365). Enterprise plans.',
+					},
+					{
+						displayName: 'Review Due (Hours)',
+						name: 'reviewDueHours',
+						type: 'number',
+						typeOptions: {
+							minValue: 1,
+							maxValue: 8760,
+						},
+						default: 24,
+						description:
+							'With Reviewer Email: the review is due this many hours after submission (1 to 8760). When it passes, your Webhook URL receives review.overdue and the review stays open.',
+					},
+					{
+						displayName: 'Review Expiry (Days)',
+						name: 'reviewExpiryDays',
+						type: 'number',
+						typeOptions: {
+							minValue: 1,
+							maxValue: 365,
+						},
+						default: 30,
+						description:
+							'With Reviewer Email: an unfinished review closes this many days after submission (1 to 365, never later than Retention). Your Webhook URL receives review.expired with the unreviewed data.',
+					},
+					{
+						displayName: 'Reviewer Email',
+						name: 'reviewerEmail',
+						type: 'string',
+						default: '',
+						placeholder: 'maria@example.com, sam@example.com',
+						description:
+							'Have a person review this document in DeepRead: one email, or a team as several emails separated by commas (up to 10). Each reviewer is emailed a link and signs in with a code; the first to complete the review completes it. The node returns when the job completes with review.status pending; the corrected data arrives at your Webhook URL as review.completed. Turns Preview on; cannot be combined with Incognito.',
+					},
+					{
+						displayName: 'Webhook URL',
+						name: 'webhookUrl',
+						type: 'string',
+						default: '',
+						placeholder: 'https://your-n8n.example.com/webhook/deepread',
+						description:
+							'An HTTPS URL (for example an n8n Webhook node) that receives one POST when the job completes or fails, with the same body as the job response, and the review events of a Reviewer Email job. Every delivery is signed with X-DeepRead-Signature. Standard plans and up.',
 					},
 				],
 			},
@@ -263,22 +343,48 @@ export class DeepRead implements INodeType {
 					}
 					const options = this.getNodeParameter('options', i, {}) as {
 						idempotencyKey?: string;
+						includeMarkers?: boolean;
 						incognito?: boolean;
+						perPage?: boolean;
 						preview?: boolean;
 						retentionDays?: number;
+						reviewDueHours?: number;
+						reviewExpiryDays?: number;
+						reviewerEmail?: string;
+						webhookUrl?: string;
 					};
 					if (options.idempotencyKey) {
 						formData.idempotency_key = options.idempotencyKey;
 					}
 					// The API reads form fields, so booleans travel as "true"/"false".
+					if (options.includeMarkers !== undefined) {
+						formData.include_markers = String(options.includeMarkers);
+					}
 					if (options.incognito !== undefined) {
 						formData.incognito = String(options.incognito);
+					}
+					if (options.perPage !== undefined) {
+						formData.per_page = String(options.perPage);
 					}
 					if (options.preview !== undefined) {
 						formData.preview = String(options.preview);
 					}
 					if (options.retentionDays !== undefined) {
 						formData.retention_days = String(options.retentionDays);
+					}
+					if (options.webhookUrl) {
+						formData.webhook_url = options.webhookUrl;
+					}
+					// Human review: the job completes as usual with review.status
+					// "pending"; the reviewed data is delivered to webhook_url later.
+					if (options.reviewerEmail) {
+						formData.reviewer_email = options.reviewerEmail;
+						if (options.reviewDueHours !== undefined) {
+							formData.review_due_hours = String(options.reviewDueHours);
+						}
+						if (options.reviewExpiryDays !== undefined) {
+							formData.review_expiry_days = String(options.reviewExpiryDays);
+						}
 					}
 				}
 
@@ -319,15 +425,27 @@ export class DeepRead implements INodeType {
 				while (Date.now() - startTime < timeout * 1000) {
 					await sleep(delay);
 
-					const pollResponse = await this.helpers.httpRequestWithAuthentication.call(
-						this,
-						'deepReadApi',
-						{
-							method: 'GET',
-							url: `${pollUrlPrefix}/${jobId}`,
-							json: true,
-						},
-					);
+					let pollResponse: IDataObject;
+					try {
+						pollResponse = await this.helpers.httpRequestWithAuthentication.call(
+							this,
+							'deepReadApi',
+							{
+								method: 'GET',
+								url: `${pollUrlPrefix}/${jobId}`,
+								json: true,
+							},
+						);
+					} catch (error) {
+						// A poll limit (429) or a transient 5xx is not a failed job:
+						// wait as long as Retry-After says, or the current delay, and poll again.
+						const retryAfter = transientRetryAfterSeconds(error);
+						if (retryAfter === null) {
+							throw error;
+						}
+						delay = Math.max(delay, retryAfter * 1000);
+						continue;
+					}
 
 					if (pollResponse.status === 'completed') {
 						const outputItem: INodeExecutionData = { json: pollResponse };

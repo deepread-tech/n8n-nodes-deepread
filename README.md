@@ -36,7 +36,7 @@ Extract typed JSON fields from documents using a custom JSON Schema. The node ou
 - `value` — the extracted value (scalar, object, or array)
 - `needs_review` — `true` if the field needs human review
 - `review_reason` — explanation when flagged (present only when `needs_review` is `true`)
-- `location.page` — page number the value was found on
+- `location` — `{page, bounding_box}`, where the value was found (when the Bounding Boxes option is on)
 
 Use this for invoices, receipts, contracts, medical records, insurance claims — any document where you need specific fields.
 
@@ -52,15 +52,29 @@ Every job reports its `product` (`extract` or `deep-extract`) and the `pipeline`
 **Searchable PDF** also returns a searchable/selectable PDF as a binary output (`searchablePdf`). It is a Deep Extract add-on on Enterprise plans; the Extract engine does not support it.
 
 **Options** (add the ones you need):
+- **Bounding Boxes** — locate layout blocks and extracted values on the page (sent as `include_markers`): a `grounding` array plus a `location` on each field. Works on both engines and every plan
 - **Idempotency Key** — a retry with the same key returns the job the first request created instead of a second one; a different request with the same key is refused with `409`
-- **Incognito** (Enterprise) — the document is encrypted with a single-use key and crypto-shredded the moment the job finishes. No preview link, no field locations; cannot be combined with Searchable PDF
-- **Preview** (default off) — page images, a public preview link and the location of each extracted value on the document. Anyone with the link can open the document, so it exists only when you turn this on
+- **Incognito** (Enterprise) — the document is encrypted with a single-use key and crypto-shredded the moment the job finishes. No preview link; cannot be combined with Searchable PDF or Reviewer Email
+- **Per Page** — a `pages` array with the Markdown, layout and fields of each page
+- **Preview** (default off) — page images and a public preview link. Anyone with the link can open the document, so it exists only when you turn this on. Add Bounding Boxes for click-to-highlight in the preview
 - **Retention (Days)** (Enterprise, 1–365) — the document, preview artifacts and extracted results are deleted that many days after submission
+- **Reviewer Email**, **Review Due (Hours)**, **Review Expiry (Days)** — have a person review the document in DeepRead; see [Human review](#human-review-reviewer-email)
+- **Webhook URL** (Standard and up) — an HTTPS URL that receives the job result and the review events; see [Webhooks](#webhooks)
 
 A feature the plan does not include is refused with `402` and a body naming the plan that has it.
 
+### Human review (Reviewer Email)
+
+Name who reviews and DeepRead runs the review: no review screen, queue or audit trail to build.
+
+- **Reviewer Email** — one email, or a team as several emails separated by commas (up to 10). Any of them can review it; the first to complete the review completes it. Each reviewer is emailed a link when the document is ready and signs in with a code sent to them
+- **Review Due (Hours)** — the review is due this many hours after submission (1–8760). When it passes, `review.overdue` is sent and the review stays open
+- **Review Expiry (Days)** — an unfinished review closes this many days after submission (1–365, default 30, never later than Retention). `review.expired` is sent with the unreviewed data
+
+The node returns as soon as the job completes, with `review.status` = `pending`, `review.reviewers`, `review.url`, `review.due_at` and `review.expires_at`. The reviewed data arrives later at your **Webhook URL** as `review.completed` (and `review.updated` for every later fix), with the same body as the job plus `review.completed_by`, `review.version` and `review.changes[]` (`{key, previous_value, value, changed_at, changed_by, version}`, one per corrected value). Reviewer Email turns Preview on and cannot be combined with Incognito.
+
 ### Form Fill
-Fill any PDF form (including scanned, non-editable forms) with your data. AI visually detects fields, semantically maps your JSON data, fills the form, and quality-checks the result. Returns the filled PDF as a binary attachment.
+Fill any PDF form (including scanned, non-editable forms) with your data. AI visually detects fields, semantically maps your JSON data, fills the form, and quality-checks the result. Returns the filled PDF as a binary attachment. Enterprise plans.
 
 Returns:
 - `filled_form_url` — URL to the filled PDF
@@ -74,7 +88,7 @@ Detect and redact 14 types of PII with irreversible black bars, built for HIPAA/
 - IPs, DOB, passport numbers, driver's licenses
 - Bank accounts, IBANs, URLs, medical record numbers
 
-Returns the redacted PDF as a binary attachment plus a detection report by PII type.
+Returns the redacted PDF as a binary attachment plus a detection report by PII type. Enterprise plans.
 
 Supports 5 languages: English, Chinese, Spanish, Hindi, Arabic.
 
@@ -82,16 +96,17 @@ Supports 5 languages: English, Chinese, Spanish, Hindi, Arabic.
 
 You need a DeepRead API key:
 
-1. Sign up at [deepread.tech/dashboard](https://www.deepread.tech/dashboard) (free, no credit card)
+1. Sign up at [deepread.tech/dashboard](https://www.deepread.tech/dashboard) (free, no credit card) and accept the Terms when asked
 2. Get your API key
 3. In n8n, create a new **DeepRead API** credential
 4. Paste your API key (starts with `sk_live_...`)
 5. Click **Test** to verify
 
-**Free:** 2,000 pages a month, resetting on the day you signed up
-**Standard:** prepaid credits from $15 per 1,000 pages — Extract $15, Deep Extract $35
-**Enterprise:** custom
-**BYOK:** Connect your own OpenAI/Google/OpenRouter key at [deepread.tech/dashboard/byok](https://www.deepread.tech/dashboard/byok) for zero DeepRead LLM costs and unlimited pages
+**Free:** 2,000 pages a month, resetting on the day you signed up; up to 50 pages per document
+**Standard:** prepaid credits — Extract $15, Deep Extract $35 per 1,000 pages; up to 1,000 pages per document; webhooks and blueprints
+**Enterprise:** custom pricing; up to 2,000 pages per document; adds PII Redact, Form Fill, Searchable PDF, Incognito, Retention and bring-your-own LLM key
+
+An API key can also carry a monthly spend limit (set in the dashboard). A job that would pass it is refused with `402` and `key_limit_reached`, naming when the limit resets.
 
 ## Compatibility
 
@@ -121,11 +136,23 @@ You need a DeepRead API key:
             Form fields: full_name, dob, ssn, address
 ```
 
-The node handles all async polling automatically — submit a document, get the result back. No need to manage job IDs or polling logic.
+### Example: Human review before posting
+
+```
+[Dropbox Trigger] → [DeepRead: Structured Extraction] → (job returned, review pending)
+                    Reviewer Email: maria@example.com
+                    Webhook URL: the Webhook node's URL below
+
+[Webhook: review.completed] → [IF: $json.review.status == "completed"] → [ERP: Post invoice]
+```
+
+The node handles all async polling automatically — submit a document, get the result back. No need to manage job IDs or polling logic. A poll that hits the plan's polling limit (`429`) or a transient `503` waits for `Retry-After` and tries again until the Timeout.
 
 ### Webhooks
 
-If you call the API directly instead, `webhook_url` (Standard plans and up) delivers the same job payload once the job finishes. Every delivery is signed with `X-DeepRead-Signature` (`t=<unix seconds>,v1=<hex>`, an HMAC-SHA256 over `<t>.<raw body>`); read the signing secret at `GET /dashboard/v1/webhooks/secret`.
+**Webhook URL** (Standard plans and up) delivers one POST when the job completes or fails, with the same body as the job response, and for Reviewer Email jobs the review events `review.completed`, `review.updated`, `review.overdue`, `review.cancelled` and `review.expired`. The event name is in the body as `event` and in the `X-DeepRead-Event` header. Point it at an n8n **Webhook** node to continue the workflow when the review is done.
+
+Every delivery is signed with `X-DeepRead-Signature` (`t=<unix seconds>,v1=<hex>`, an HMAC-SHA256 over `<t>.<raw body>`); read the signing secret at `GET /dashboard/v1/webhooks/secret`.
 
 ## Resources
 
@@ -138,6 +165,18 @@ If you call the API directly instead, `webhook_url` (Standard plans and up) deli
 - **Email support**: support@deepread.tech
 
 ## Version history
+
+### 0.5.0
+- Options: Reviewer Email, Review Due (Hours), Review Expiry (Days) — a person reviews the document in DeepRead; the result arrives at the Webhook URL as `review.completed`
+- Options: Webhook URL, Bounding Boxes (`include_markers`), Per Page
+- Polling waits for `Retry-After` on `429` and transient `5xx` instead of failing the item
+- README: plans and limits, Form Fill and PII Redact are Enterprise, key spend limits, review webhooks; Preview no longer claims field locations (that is Bounding Boxes)
+
+### 0.4.1
+- Two products: Extract $15 and Deep Extract $35 per 1,000 pages; every job reports its `product`
+
+### 0.4.0
+- Preview is off by default, matching the API
 
 ### 0.3.0
 - Engine selector (Plan Default / Extract / Deep Extract), sent as the `pipeline` field
