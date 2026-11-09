@@ -165,6 +165,32 @@ export class DeepRead implements INodeType {
 				},
 			},
 			{
+				displayName: 'Speed',
+				name: 'speed',
+				type: 'options',
+				options: [
+					{
+						name: 'Standard',
+						value: '',
+						description: 'Normal speed and price',
+					},
+					{
+						name: 'Fast',
+						value: 'fast',
+						description:
+							'With Deep Extract: Deep Extract Fast, about 2x faster at the same accuracy ($90 per 1,000 pages). With Extract: the Extract price, mainly helps long documents.',
+					},
+				],
+				default: '',
+				description:
+					'How fast the document is processed (Fast is sent as speed=fast). Standard and Enterprise plans; other plans get 402. Fast Deep Extract jobs report their product as deep-extract-fast.',
+				displayOptions: {
+					show: {
+						operation: ['ocrExtract', 'structuredExtract'],
+					},
+				},
+			},
+			{
 				displayName: 'Searchable PDF',
 				name: 'searchablePdf',
 				type: 'boolean',
@@ -335,6 +361,11 @@ export class DeepRead implements INodeType {
 					const engine = this.getNodeParameter('engine', i, '') as string;
 					if (engine) {
 						formData.pipeline = engine;
+					}
+					const speed = this.getNodeParameter('speed', i, '') as string;
+					if (speed) {
+						// Standard and Enterprise plans; Deep Extract + fast bills as Deep Extract Fast.
+						formData.speed = speed;
 					}
 					const searchablePdf = this.getNodeParameter('searchablePdf', i, false) as boolean;
 					if (searchablePdf) {

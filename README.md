@@ -47,7 +47,11 @@ Use this for invoices, receipts, contracts, medical records, insurance claims �
 - **Extract** — one OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema
 - **Deep Extract** — two OCR passes, an LLM judge and a second read that checks each extracted field value
 
-Every job reports its `product` (`extract` or `deep-extract`) and the `pipeline` you asked for. The older names `fast` and `standard` still work as aliases for `extract` and `deep-extract`.
+**Speed** is sent as the API's `speed` field only when you pick **Fast** (Standard and Enterprise plans; other plans get `402`):
+- **Standard** — the default; omits the field
+- **Fast** — with Deep Extract this is **Deep Extract Fast**: about 2× faster at the same accuracy, $90 per 1,000 pages. With Extract it keeps the Extract price and mainly helps long documents
+
+Every job reports its `product` (`extract`, `deep-extract` or `deep-extract-fast`) and the `pipeline` you asked for. The older names `fast` and `standard` still work as aliases for `extract` and `deep-extract`.
 
 **Searchable PDF** also returns a searchable/selectable PDF as a binary output (`searchablePdf`). It is a Deep Extract add-on on Enterprise plans; the Extract engine does not support it.
 
@@ -103,7 +107,7 @@ You need a DeepRead API key:
 5. Click **Test** to verify
 
 **Free:** 2,000 pages a month, resetting on the day you signed up; up to 50 pages per document
-**Standard:** prepaid credits — Extract $15, Deep Extract $35 per 1,000 pages; up to 1,000 pages per document; webhooks and blueprints
+**Standard:** prepaid credits — Extract $15, Deep Extract $35, Deep Extract Fast $90 per 1,000 pages; up to 1,000 pages per document; webhooks and blueprints
 **Enterprise:** custom pricing; up to 2,000 pages per document; adds PII Redact, Form Fill, Searchable PDF, Incognito, Retention and bring-your-own LLM key
 
 An API key can also carry a monthly spend limit (set in the dashboard). A job that would pass it is refused with `402` and `key_limit_reached`, naming when the limit resets.
@@ -165,6 +169,9 @@ Every delivery is signed with `X-DeepRead-Signature` (`t=<unix seconds>,v1=<hex>
 - **Email support**: support@deepread.tech
 
 ## Version history
+
+### 0.6.0
+- Speed selector (Standard / Fast), sent as `speed=fast` only when Fast is picked. Deep Extract + Fast is Deep Extract Fast (about 2× faster, same accuracy, $90 per 1,000 pages) and reports its `product` as `deep-extract-fast`; Extract + Fast keeps the Extract price. Standard and Enterprise plans
 
 ### 0.5.0
 - Options: Reviewer Email, Review Due (Hours), Review Expiry (Days) — a person reviews the document in DeepRead; the result arrives at the Webhook URL as `review.completed`
