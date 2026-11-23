@@ -28,6 +28,128 @@ function transientRetryAfterSeconds(error: unknown): number | null {
 	return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 60) : 0;
 }
 
+const MAX_DOCUMENT_TYPES = 50;
+const DOCUMENT_TYPE_KEYS = new Set(['name', 'description', 'split_by', 'schema', 'blueprint_id']);
+const RESERVED_TYPE_NAMES = new Set(['none', 'other', 'unassigned']);
+const DOCUMENT_TYPE_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+const isObject = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * Check the Document Types of a Split job before anything is uploaded:
+ * the JSON string the API expects, or what is wrong with them. The rules are
+ * the API's own, so a mistake is reported by name, before the upload.
+ */
+function checkDocumentTypes(raw: unknown): { json: string } | { problem: string } {
+	let parsed = raw;
+	if (typeof raw === 'string') {
+		if (!raw.trim()) {
+			return { problem: 'Document Types is required: a JSON array of document types' };
+		}
+		try {
+			parsed = JSON.parse(raw);
+		} catch (error) {
+			return { problem: `Document Types is not valid JSON: ${(error as Error).message}` };
+		}
+	}
+	if (!Array.isArray(parsed)) {
+		return { problem: 'Document Types must be a JSON array of objects' };
+	}
+	if (parsed.length < 1 || parsed.length > MAX_DOCUMENT_TYPES) {
+		return {
+			problem: `Document Types must hold 1 to ${MAX_DOCUMENT_TYPES} document types; got ${parsed.length}`,
+		};
+	}
+
+	const seen = new Set<string>();
+	for (const [index, item] of (parsed as unknown[]).entries()) {
+		let where = `Document Types[${index}]`;
+		if (!isObject(item)) {
+			return { problem: `${where} must be a JSON object` };
+		}
+		const unknown = Object.keys(item).filter((key) => !DOCUMENT_TYPE_KEYS.has(key));
+		if (unknown.length) {
+			return {
+				problem: `${where}: unknown field ${unknown.join(', ')}; allowed: ${[...DOCUMENT_TYPE_KEYS].join(', ')}`,
+			};
+		}
+		const { name, description, split_by: splitBy, schema, blueprint_id: blueprintId } = item;
+		if (typeof name !== 'string' || !DOCUMENT_TYPE_NAME.test(name)) {
+			return { problem: `${where}: "name" must be 1 to 64 letters, digits, "_" or "-"` };
+		}
+		where = `${where} ("${name}")`;
+		if (RESERVED_TYPE_NAMES.has(name.toLowerCase())) {
+			return {
+				problem: `${where}: "name" cannot be one of ${[...RESERVED_TYPE_NAMES].join(', ')}`,
+			};
+		}
+		if (seen.has(name.toLowerCase())) {
+			return { problem: `${where}: "name" is used by more than one document type` };
+		}
+		seen.add(name.toLowerCase());
+		if (typeof description !== 'string' || !description.trim() || description.length > 1000) {
+			return { problem: `${where}: "description" must be 1 to 1,000 characters of text` };
+		}
+		if (
+			splitBy !== undefined &&
+			splitBy !== null &&
+			(typeof splitBy !== 'string' || !splitBy.trim() || splitBy.length > 200)
+		) {
+			return { problem: `${where}: "split_by" must be 1 to 200 characters of text` };
+		}
+		if (schema !== undefined && schema !== null && !isObject(schema)) {
+			return { problem: `${where}: "schema" must be a JSON object` };
+		}
+		if (
+			blueprintId !== undefined &&
+			blueprintId !== null &&
+			(typeof blueprintId !== 'string' || !blueprintId.trim())
+		) {
+			return { problem: `${where}: "blueprint_id" must be a non-empty string` };
+		}
+		if (
+			schema !== undefined &&
+			schema !== null &&
+			blueprintId !== undefined &&
+			blueprintId !== null
+		) {
+			return { problem: `${where}: send "schema" or "blueprint_id", not both` };
+		}
+	}
+
+	return { json: JSON.stringify(parsed) };
+}
+
+/**
+ * One document of a Split job as its own n8n item: the fields as a flat
+ * object (key to value) instead of the API's list of field objects.
+ */
+function splitDocumentItem(jobId: string, document: IDataObject): IDataObject {
+	const extraction = document.extraction as { fields?: IDataObject[] } | null | undefined;
+	const fields: IDataObject = {};
+	const fieldsNeedingReview: string[] = [];
+	for (const field of extraction?.fields ?? []) {
+		const key = String(field.key);
+		fields[key] = field.value ?? null;
+		if (field.needs_review) {
+			fieldsNeedingReview.push(key);
+		}
+	}
+	return {
+		jobId,
+		index: document.index,
+		type: document.type,
+		pages: document.pages ?? [],
+		confidence: document.confidence,
+		splitKey: document.split_key ?? null,
+		needsReview: document.needs_review ?? false,
+		fields,
+		fieldsNeedingReview,
+		error: document.error ?? null,
+	};
+}
+
 export class DeepRead implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'DeepRead',
@@ -36,7 +158,8 @@ export class DeepRead implements INodeType {
 		group: ['transform'],
 		version: 1,
 		subtitle: '={{$parameter["operation"]}}',
-		description: 'Process documents with DeepRead — OCR, structured extraction, form fill, PII redaction',
+		description:
+			'Process documents with DeepRead — OCR, structured extraction, split, form fill, PII redaction',
 		defaults: {
 			name: 'DeepRead',
 		},
@@ -57,28 +180,35 @@ export class DeepRead implements INodeType {
 				noDataExpression: true,
 				options: [
 					{
-						name: 'OCR Extract',
-						value: 'ocrExtract',
-						description: 'Extract text from a PDF or image',
-						action: 'Extract text from a document',
-					},
-					{
-						name: 'Structured Extraction',
-						value: 'structuredExtract',
-						description: 'Extract structured JSON fields using a schema',
-						action: 'Extract structured data from a document',
-					},
-					{
 						name: 'Form Fill',
 						value: 'formFill',
 						description: 'Fill a PDF form with data using AI vision',
 						action: 'Fill a PDF form with data',
 					},
 					{
+						name: 'OCR Extract',
+						value: 'ocrExtract',
+						description: 'Extract text from a PDF or image',
+						action: 'Extract text from a document',
+					},
+					{
 						name: 'PII Redact',
 						value: 'piiRedact',
 						description: 'Redact personally identifiable information from a document',
 						action: 'Redact PII from a document',
+					},
+					{
+						name: 'Split',
+						value: 'split',
+						description:
+							'Split a file that holds several documents and extract each one with the schema of its type',
+						action: 'Split a file into documents',
+					},
+					{
+						name: 'Structured Extraction',
+						value: 'structuredExtract',
+						description: 'Extract structured JSON fields using a schema',
+						action: 'Extract structured data from a document',
 					},
 				],
 				default: 'ocrExtract',
@@ -94,11 +224,39 @@ export class DeepRead implements INodeType {
 				displayName: 'Schema',
 				name: 'schema',
 				type: 'json',
-				default: '{\n  "type": "object",\n  "properties": {\n    "vendor": {"type": "string", "description": "Company name"},\n    "total": {"type": "number", "description": "Total amount"},\n    "date": {"type": "string", "description": "Document date"}\n  }\n}',
+				default:
+					'{\n  "type": "object",\n  "properties": {\n    "vendor": {"type": "string", "description": "Company name"},\n    "total": {"type": "number", "description": "Total amount"},\n    "date": {"type": "string", "description": "Document date"}\n  }\n}',
 				description: 'JSON Schema defining the fields to extract',
 				displayOptions: {
 					show: {
 						operation: ['structuredExtract'],
+					},
+				},
+			},
+			{
+				displayName: 'Document Types',
+				name: 'documentTypes',
+				type: 'json',
+				default:
+					'[\n  {\n    "name": "invoice",\n    "description": "A supplier invoice with line items and a total",\n    "split_by": "invoice number",\n    "schema": {\n      "type": "object",\n      "properties": {\n        "invoice_number": {"type": "string"},\n        "total": {"type": "number", "description": "Total amount due"}\n      }\n    }\n  },\n  {\n    "name": "remittance",\n    "description": "A remittance advice or payment slip"\n  }\n]',
+				description:
+					'JSON array of the document types to look for, 1 to 50. Each has a name (letters, digits, _ or -) and a description of what the document looks like. Optional: split_by (what sets one document apart from the next, for example "account number") and a schema (JSON Schema of the fields to extract) or a blueprint_id. A type with no schema is split out but not extracted.',
+				displayOptions: {
+					show: {
+						operation: ['split'],
+					},
+				},
+			},
+			{
+				displayName: 'One Item per Document',
+				name: 'onePerDocument',
+				type: 'boolean',
+				default: false,
+				description:
+					'Whether to output each document found as its own item (type, pages, confidence, splitKey, fields as a flat object, error) instead of one item with the whole job. Pages that matched no type are only in the whole-job output.',
+				displayOptions: {
+					show: {
+						operation: ['split'],
 					},
 				},
 			},
@@ -146,7 +304,8 @@ export class DeepRead implements INodeType {
 					{
 						name: 'Extract',
 						value: 'extract',
-						description: 'One OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema',
+						description:
+							'One OCR pass: Markdown, layout and bounding boxes, plus your fields when you send a schema',
 					},
 					{
 						name: 'Deep Extract',
@@ -160,7 +319,7 @@ export class DeepRead implements INodeType {
 					'Which engine processes the document (sent as the pipeline field). Every job reports its product: extract or deep-extract. The older names fast and standard still work as aliases.',
 				displayOptions: {
 					show: {
-						operation: ['ocrExtract', 'structuredExtract'],
+						operation: ['ocrExtract', 'structuredExtract', 'split'],
 					},
 				},
 			},
@@ -199,7 +358,7 @@ export class DeepRead implements INodeType {
 					'Whether to also produce a searchable PDF (embedded OCR text layer), returned as a binary output. A Deep Extract add-on on Enterprise plans; the Extract engine does not support it.',
 				displayOptions: {
 					show: {
-						operation: ['ocrExtract', 'structuredExtract'],
+						operation: ['ocrExtract', 'structuredExtract', 'split'],
 					},
 				},
 			},
@@ -218,7 +377,7 @@ export class DeepRead implements INodeType {
 				default: {},
 				displayOptions: {
 					show: {
-						operation: ['ocrExtract', 'structuredExtract'],
+						operation: ['ocrExtract', 'structuredExtract', 'split'],
 					},
 				},
 				options: [
@@ -253,6 +412,11 @@ export class DeepRead implements INodeType {
 						default: false,
 						description:
 							'Whether to add a per-page breakdown (pages array): the Markdown, layout and fields of each page',
+						displayOptions: {
+							show: {
+								'/operation': ['ocrExtract', 'structuredExtract'],
+							},
+						},
 					},
 					{
 						displayName: 'Preview',
@@ -338,6 +502,7 @@ export class DeepRead implements INodeType {
 				let submitUrl: string;
 				let pollUrlPrefix: string;
 				const formData: Record<string, string> = {};
+				let completed = false;
 
 				if (operation === 'formFill') {
 					submitUrl = 'https://api.deepread.tech/v1/form-fill';
@@ -352,8 +517,23 @@ export class DeepRead implements INodeType {
 						formData.language = language;
 					}
 				} else {
-					submitUrl = 'https://api.deepread.tech/v1/process';
+					// Split is /v1/process with document types: same engines, same
+					// options, same job to poll. Only speed and per_page are not offered
+					// (a split job always returns the text of every page).
+					submitUrl =
+						operation === 'split'
+							? 'https://api.deepread.tech/v1/split'
+							: 'https://api.deepread.tech/v1/process';
 					pollUrlPrefix = 'https://api.deepread.tech/v1/jobs';
+					if (operation === 'split') {
+						const documentTypes = checkDocumentTypes(this.getNodeParameter('documentTypes', i));
+						if ('problem' in documentTypes) {
+							throw new NodeOperationError(this.getNode(), documentTypes.problem, {
+								itemIndex: i,
+							});
+						}
+						formData.document_types = documentTypes.json;
+					}
 					if (operation === 'structuredExtract') {
 						const schema = this.getNodeParameter('schema', i) as string;
 						formData.schema = typeof schema === 'string' ? schema : JSON.stringify(schema);
@@ -363,7 +543,7 @@ export class DeepRead implements INodeType {
 						formData.pipeline = engine;
 					}
 					const speed = this.getNodeParameter('speed', i, '') as string;
-					if (speed) {
+					if (speed && operation !== 'split') {
 						// Standard and Enterprise plans; Deep Extract + fast bills as Deep Extract Fast.
 						formData.speed = speed;
 					}
@@ -394,7 +574,7 @@ export class DeepRead implements INodeType {
 					if (options.incognito !== undefined) {
 						formData.incognito = String(options.incognito);
 					}
-					if (options.perPage !== undefined) {
+					if (options.perPage !== undefined && operation !== 'split') {
 						formData.per_page = String(options.perPage);
 					}
 					if (options.preview !== undefined) {
@@ -420,7 +600,11 @@ export class DeepRead implements INodeType {
 				}
 
 				// Submit document
-				const multipartData: Array<{ name: string; value: string | Buffer; options?: { fileName?: string; contentType?: string } }> = [];
+				const multipartData: Array<{
+					name: string;
+					value: string | Buffer;
+					options?: { fileName?: string; contentType?: string };
+				}> = [];
 
 				multipartData.push({
 					name: 'file',
@@ -514,7 +698,9 @@ export class DeepRead implements INodeType {
 						// If a searchable PDF was produced (OCR/structured + searchable_pdf), download it
 						const artifacts = pollResponse.artifacts as { searchable_pdf_url?: string } | undefined;
 						if (
-							(operation === 'ocrExtract' || operation === 'structuredExtract') &&
+							(operation === 'ocrExtract' ||
+								operation === 'structuredExtract' ||
+								operation === 'split') &&
 							artifacts?.searchable_pdf_url
 						) {
 							const searchableFile = await this.helpers.httpRequest({
@@ -532,14 +718,30 @@ export class DeepRead implements INodeType {
 							outputItem.binary = { ...(outputItem.binary ?? {}), searchablePdf: searchableBinary };
 						}
 
+						completed = true;
+						if (operation === 'split' && this.getNodeParameter('onePerDocument', i, false)) {
+							// One item per document found; the searchable PDF, when there
+							// is one, rides on the first.
+							const split = pollResponse.split as { documents?: IDataObject[] } | undefined;
+							(split?.documents ?? []).forEach((document, position) => {
+								returnData.push({
+									json: splitDocumentItem(jobId, document),
+									pairedItem: { item: i },
+									...(position === 0 && outputItem.binary ? { binary: outputItem.binary } : {}),
+								});
+							});
+							break;
+						}
 						returnData.push(outputItem);
 						break;
 					} else if (pollResponse.status === 'failed') {
 						let errorMsg = 'Unknown error';
 						if (pollResponse.error) {
-							errorMsg = typeof pollResponse.error === 'object'
-								? (pollResponse.error as { message?: string }).message || JSON.stringify(pollResponse.error)
-								: String(pollResponse.error);
+							errorMsg =
+								typeof pollResponse.error === 'object'
+									? (pollResponse.error as { message?: string }).message ||
+										JSON.stringify(pollResponse.error)
+									: String(pollResponse.error);
 						} else if (pollResponse.error_message) {
 							errorMsg = String(pollResponse.error_message);
 						}
@@ -553,7 +755,7 @@ export class DeepRead implements INodeType {
 					delay = Math.min(delay * 1.5, 15000);
 				}
 
-				if (returnData.length <= i) {
+				if (!completed) {
 					throw new NodeOperationError(
 						this.getNode(),
 						`DeepRead processing timed out after ${timeout} seconds`,

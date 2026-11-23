@@ -2,7 +2,7 @@
 
 # n8n-nodes-deepread (n8n Community Node)
 
-n8n community node for DeepRead (4 operations). Must track the deep-read-service public API surface.
+n8n community node for DeepRead (5 operations). Must track the deep-read-service public API surface.
 
 ## Documentation
 

@@ -23,7 +23,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 
 ## Operations
 
-The DeepRead node supports four operations, all powered by the same DeepRead API:
+The DeepRead node supports five operations, all powered by the same DeepRead API:
 
 ### OCR Extract
 Extract text from any PDF or image. Returns the raw extracted text, plus a preview URL for the document when the Preview option is on.
@@ -40,7 +40,53 @@ Extract typed JSON fields from documents using a custom JSON Schema. The node ou
 
 Use this for invoices, receipts, contracts, medical records, insurance claims — any document where you need specific fields.
 
-### Engine and options (OCR Extract and Structured Extraction)
+### Split
+Send one file that holds several documents: a scanned mail batch, a loan package, a month of invoices in one PDF. Each document is found, typed and extracted in one job.
+
+**Document Types** is a JSON array of 1 to 50 types to look for. Each type has:
+- `name` — 1 to 64 letters, digits, `_` or `-`, unique in the list
+- `description` — what this type of document looks like. The better it is, the better the split
+- `split_by` (optional) — what sets one document apart from the next, for example `account number`
+- `schema` (optional) — a JSON Schema of the fields to extract from each document of this type
+- `blueprint_id` (optional) — a blueprint to extract with, instead of `schema`
+
+```json
+[
+  {
+    "name": "invoice",
+    "description": "A supplier invoice with line items and a total",
+    "split_by": "invoice number",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "invoice_number": {"type": "string"},
+        "total": {"type": "number", "description": "Total amount due"}
+      }
+    }
+  },
+  {"name": "remittance", "description": "A remittance advice or payment slip"}
+]
+```
+
+The node checks Document Types before it uploads the file. A type with no `schema` and no `blueprint_id` is split out but not extracted.
+
+By default the node outputs one item: the full job response. The documents are in `$json.split.documents`, each with:
+- `index` — position in the file, from 1
+- `type` — the `name` of the type it matched
+- `pages` — the pages of the file it covers (1-based)
+- `confidence` — `high` or `low`. Check a `low` document by hand
+- `split_key` — the `split_by` value of this document, when there is one
+- `needs_review` — `true` when confidence is low, extraction failed, or a field needs review
+- `extraction.fields` — the fields, in the same shape as Structured Extraction
+- `error` — why the fields could not be extracted. The other documents are not affected
+
+`$json.split.unassigned_pages` lists the pages that matched no type. The text of every page is in `$json.pages`. A split job has no top-level `extraction`.
+
+Turn on **One Item per Document** to get each document as its own item, ready for a loop or a spreadsheet row: `jobId`, `index`, `type`, `pages`, `confidence`, `splitKey`, `needsReview`, `fields` (a flat object, field name to value), `fieldsNeedingReview` (field names) and `error`.
+
+Split takes the same Engine, Searchable PDF and Options as the two operations above. Speed and Per Page are not offered. Price: the engine's price plus $5 per 1,000 pages of the file. Every page counts once.
+
+### Engine and options (OCR Extract, Structured Extraction and Split)
 
 **Engine** picks how the document is processed and is sent as the API's `pipeline` field:
 - **Plan Default** — omits the field: Free and Standard plans run Extract, Enterprise plans run Deep Extract
@@ -127,6 +173,14 @@ An API key can also carry a monthly spend limit (set in the dashboard). A job th
                   Schema: vendor, total, due_date
 ```
 
+### Example: Split a scanned mail batch
+
+```
+[Google Drive Trigger] → [DeepRead: Split] → [Switch: $json.type] → [Google Sheets]
+                         Document Types: invoice, remittance
+                         One Item per Document: on
+```
+
 ### Example: Redact PII before LLM processing
 
 ```
@@ -169,6 +223,9 @@ Every delivery is signed with `X-DeepRead-Signature` (`t=<unix seconds>,v1=<hex>
 - **Email support**: support@deepread.tech
 
 ## Version history
+
+### 0.7.0
+- Split operation: one file that holds several documents is split, and each document is typed and extracted in one job. Document Types are checked before the upload. One Item per Document outputs each document as its own item
 
 ### 0.6.0
 - Speed selector (Standard / Fast), sent as `speed=fast` only when Fast is picked. Deep Extract + Fast is Deep Extract Fast (about 2× faster, same accuracy, $90 per 1,000 pages) and reports its `product` as `deep-extract-fast`; Extract + Fast keeps the Extract price. Standard and Enterprise plans
