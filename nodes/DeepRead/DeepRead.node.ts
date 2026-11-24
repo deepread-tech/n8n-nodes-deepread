@@ -723,14 +723,17 @@ export class DeepRead implements INodeType {
 							// One item per document found; the searchable PDF, when there
 							// is one, rides on the first.
 							const split = pollResponse.split as { documents?: IDataObject[] } | undefined;
-							(split?.documents ?? []).forEach((document, position) => {
+							const documents = split?.documents ?? [];
+							documents.forEach((document, position) => {
 								returnData.push({
 									json: splitDocumentItem(jobId, document),
 									pairedItem: { item: i },
 									...(position === 0 && outputItem.binary ? { binary: outputItem.binary } : {}),
 								});
 							});
-							break;
+							// No document found: the whole job goes out instead, so the
+							// unassigned pages are not lost and the workflow still runs.
+							if (documents.length > 0) break;
 						}
 						returnData.push(outputItem);
 						break;
